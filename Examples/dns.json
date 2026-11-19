@@ -1,0 +1,6 @@
+{
+  "mode": "dns",
+  "domain": "dns.example.invalid",
+  "public_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "tunnel_type": "socks5"
+}

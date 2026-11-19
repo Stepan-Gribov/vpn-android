@@ -1,0 +1,15 @@
+{
+  "api_version": 1,
+  "package_schema": 1,
+  "algorithm": "Ed25519",
+  "key_id": "0000000000000000",
+  "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "api_base": "https://panel.example.invalid/",
+  "dns_transport": {
+    "domain": "dns.example.invalid",
+    "publicKey": "0000000000000000000000000000000000000000000000000000000000000000",
+    "resolver": "1.1.1.1:53",
+    "tunnelType": "socks5"
+  },
+  "maximum_package_bytes": 1048576
+}

@@ -1,0 +1,6 @@
+{
+  "mode": "turn",
+  "call_link": "https://vk.com/call/join/EXAMPLE",
+  "server": "example.invalid:56010",
+  "vless_id": "00000000-0000-0000-0000-000000000000"
+}

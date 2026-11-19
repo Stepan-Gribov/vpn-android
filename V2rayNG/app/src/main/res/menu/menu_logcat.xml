@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/search_view"
+        android:icon="@drawable/ic_outline_filter_alt_24"
+        android:title="@string/menu_item_search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always|collapseActionView" />
+    <item
+        android:id="@+id/clear_all"
+        android:icon="@drawable/ic_delete_24dp"
+        android:title="@string/logcat_clear"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/copy_all"
+        android:icon="@drawable/ic_copy"
+        android:title="@string/logcat_copy"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/share_all"
+        android:icon="@drawable/ic_share_24dp"
+        android:title="@string/logcat_share"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/log_level"
+        android:title="@string/logcat_level_title"
+        app:showAsAction="never">
+        <menu>
+            <group
+                android:id="@+id/group_log_level"
+                android:checkableBehavior="single">
+                <item
+                    android:id="@+id/level_all"
+                    android:checked="true"
+                    android:title="@string/logcat_level_all" />
+                <item
+                    android:id="@+id/level_info"
+                    android:title="@string/logcat_level_info" />
+                <item
+                    android:id="@+id/level_warn"
+                    android:title="@string/logcat_level_warning" />
+                <item
+                    android:id="@+id/level_error"
+                    android:title="@string/logcat_level_error" />
+            </group>
+        </menu>
+    </item>
+</menu>

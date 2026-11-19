@@ -1,0 +1,18 @@
+#!/bin/sh
+if [ "$1" != "-c" ]; then
+    echo "This AmneziaWG build wrapper supports sha256sum -c only." >&2
+    exit 2
+fi
+
+status=0
+while IFS=' ' read -r expected file_name; do
+    file_name=${file_name#\*}
+    actual=$(shasum -a 256 "$file_name" | awk '{print $1}') || exit 1
+    if [ "$actual" != "$expected" ]; then
+        echo "$file_name: FAILED"
+        status=1
+    else
+        echo "$file_name: OK"
+    fi
+done
+exit "$status"

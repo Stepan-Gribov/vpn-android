@@ -1,0 +1,20 @@
+#!/bin/sh
+lock_path="$1"
+shift
+
+if [ "$1" != "-c" ] || [ -z "$2" ]; then
+    echo "This AmneziaWG build wrapper supports flock -c only." >&2
+    exit 2
+fi
+
+if [ -x /usr/bin/lockf ]; then
+    exec /usr/bin/lockf -k "$lock_path" /bin/sh -c "$2"
+fi
+if [ -x /usr/bin/flock ]; then
+    exec /usr/bin/flock "$lock_path" -c "$2"
+fi
+if [ -x /bin/flock ]; then
+    exec /bin/flock "$lock_path" -c "$2"
+fi
+echo "A host file locking utility is required to build AmneziaWG." >&2
+exit 1
