@@ -236,7 +236,6 @@ class SimpleActivity : AppCompatActivity() {
         syncConnectionState()
         if (::store.isInitialized) {
             lifecycleScope.launch { withContext(Dispatchers.IO) { store.reload(); PanelAccess.enforce(applicationContext,store) }; render() }
-            PanelSyncScheduler.restore(applicationContext, catchUp = true)
         }
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {

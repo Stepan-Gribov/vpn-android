@@ -3,6 +3,9 @@ package com.v2ray.ang
 import android.content.Context
 import android.os.Build
 import android.webkit.WebView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.multidex.MultiDexApplication
 import androidx.work.Configuration
 import androidx.work.WorkManager
@@ -60,6 +63,11 @@ class AngApplication : MultiDexApplication() {
             WorkManager.initialize(this, workManagerConfiguration)
             WorkManager.getInstance(this).cancelUniqueWork("tndtun-panel-sync")
             PanelSyncScheduler.restore(this)
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    PanelSyncScheduler.restore(this@AngApplication, catchUp = true)
+                }
+            })
         }
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO)
 
