@@ -1,9 +1,6 @@
 package com.v2ray.ang.simple
 
 import android.content.Context
-import androidx.work.WorkManager
-import androidx.work.Worker
-import androidx.work.WorkerParameters
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.MmkvManager
 import kotlinx.coroutines.*
@@ -29,12 +26,45 @@ object PanelManager {
         val key="activate:${input.trust.api}:${input.trust.keyID}:${input.trust.publicKey}:$codeHash"
         return launch(context,key) { client(context,it).activate(input,name) }
     }
-    fun refreshManually(context: Context): Deferred<Boolean> = launch(context,"manual-sync") { store->
-        for(sub in store.subscriptions) {
-            if(!sub.needsActivation) client(context,store).sync(sub)
-        }
+    fun refreshManually(context: Context): Deferred<Boolean> = launch(context,"manual-sync") {
+        syncSubscriptions(context.applicationContext, it, automatic = false)
     }
-    private fun launch(context: Context,kind: String,action: suspend (SimpleStore)->Unit): Deferred<Boolean> {
+
+    internal fun refreshAutomatically(context: Context): Deferred<Boolean> =
+        launch(context, "automatic-sync", automatic = true) {
+            syncSubscriptions(context.applicationContext, it, automatic = true)
+        }
+
+    private suspend fun syncSubscriptions(context: Context, store: SimpleStore, automatic: Boolean) {
+        val subscriptions = if (automatic) {
+            // Two requests fit in one non-expedited WorkManager run, including transport retries.
+            val now = System.currentTimeMillis() / 1000
+            store.subscriptions.mapNotNull { sub -> sub.automaticSyncAt?.let { it to sub } }
+                .filter { (at, _) -> at <= now }.sortedBy { (at, _) -> at }.take(2).map { (_, sub) -> sub }
+        } else store.subscriptions.filterNot { it.needsActivation }
+
+        val client = client(context, store)
+        var failure: Exception? = null
+        for (sub in subscriptions) {
+            store.reload()
+            val current = store.subscriptions.firstOrNull { it.id == sub.id && !it.needsActivation } ?: continue
+            val automaticDue = current.automaticSyncAt?.let { it <= System.currentTimeMillis() / 1000 } == true
+            if (automatic && !automaticDue) continue
+            try {
+                client.sync(current)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (failure == null) failure = e
+                if (automaticDue) {
+                    store.deferAutomaticSync(current, System.currentTimeMillis() / 1000 + 15 * 60)
+                }
+            }
+        }
+        failure?.let { throw it }
+    }
+    private fun launch(context: Context,kind: String,automatic: Boolean = false,
+        action: suspend (SimpleStore)->Unit): Deferred<Boolean> {
         val app=context.applicationContext
         return queue.submit(kind) {
             mutex.lock()
@@ -44,18 +74,23 @@ object PanelManager {
                         message="Настройки уже обновляются другим процессом. Повторите после завершения."; notifyChanged(); return@submit false
                     }
                     lease.use {
-                        busy=true; route=null; message="Обновляем настройки…"; notifyChanged()
                         try {
                             val store=SimpleStore(app)
-                            action(store)
-                            PanelAccess.enforce(app,store)
+                            if (automatic && store.subscriptions.none {
+                                it.automaticSyncAt?.let { at -> at <= System.currentTimeMillis() / 1000 } == true
+                            }) return@submit true
+                            busy=true; route=null; message="Обновляем настройки…"; notifyChanged()
+                            try { action(store) } finally { PanelAccess.enforce(app,store) }
                             message=if(RoutingPolicyState.pending(store)) "Список обновлён. Переподключитесь, чтобы применить его." else "Настройки обновлены"
                             true
                         } catch(e:CancellationException) { message=""; throw e }
                         catch(e:Exception) {
                             message=if(e is PanelHttpFailure) e.message.orEmpty() else "Не удалось получить или проверить пакет. Сохранённые настройки оставлены."
                             false
-                        } finally { route=null; busy=false; notifyChanged() }
+                        } finally {
+                            route=null; busy=false; notifyChanged()
+                            PanelSyncScheduler.restore(app)
+                        }
                     }
                 }
             } finally { mutex.unlock() }
@@ -75,13 +110,6 @@ object PanelManager {
             }
         })
     })
-    fun cancelAutomaticSync(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork("tndtun-panel-sync")
-    }
-}
-class PanelSyncWorker(context: Context,params: WorkerParameters): Worker(context,params) {
-    // Compatibility with persisted jobs from older builds: never make a request.
-    override fun doWork(): Result = Result.success()
 }
 
 /** Only a verified subscription expiry/revocation stops its currently running access. */

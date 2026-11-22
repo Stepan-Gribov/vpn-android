@@ -107,8 +107,17 @@ class SimpleStore(context: Context) {
     }
     @Synchronized fun requireReactivation(id: String) {
         mutate { current -> current.copy(subscriptions=current.subscriptions.map { sub -> if(sub.id!=id) sub else
-            PanelSubscription(sub.id,sub.trust,sub.deviceID,sub.token,sub.clientID,sub.clientName,sub.revision,sub.status,
-                sub.expiresAt,sub.syncAfterSeconds,sub.lastSync,sub.settings,true,sub.activationCode) }) }
+            sub.withSyncState(needsActivation = true, nextSyncAt = 0) }) }
+    }
+    @Synchronized internal fun deferAutomaticSync(expected: PanelSubscription, until: Long) {
+        mutate { current ->
+            val sub = current.subscriptions.firstOrNull { it.id == expected.id }
+            if (sub?.automaticSyncAt == null || sub.nextSyncAt != expected.nextSyncAt ||
+                sub.lastSync != expected.lastSync || sub.revision != expected.revision) current
+            else current.copy(subscriptions = current.subscriptions.map {
+                if (it.id == sub.id) it.withSyncState(nextSyncAt = until) else it
+            })
+        }
     }
     fun subscriptionFor(profile: SimpleConfiguration) = profile.managed?.subscriptionID?.let { id -> subscriptions.firstOrNull { it.id==id } }
     fun requireAccess(profile: SimpleConfiguration) {

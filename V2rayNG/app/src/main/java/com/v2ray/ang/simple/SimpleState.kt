@@ -58,7 +58,9 @@ internal object PanelStateReducer {
         val profiles = manual + packet.profiles
         val sub = PanelSubscription(id,trust,packet.deviceID,token,packet.clientID,packet.clientName,packet.revision,
             packet.status,packet.expiresAt,packet.syncAfterSeconds,now,packet.settings ?: prior?.settings,
-            activationCode=activationCode ?: prior?.activationCode)
+            activationCode=activationCode ?: prior?.activationCode,
+            nextSyncAt=packet.settings?.subscriptionSync?.takeIf { it.enabled && packet.status == "active" }
+                ?.nextAfter(now) ?: 0)
         val selectSource = activation || prior==null || state.activeSubscriptionID==null || state.activeSubscriptionID==id
         val settings = if(selectSource) packet.settings else null
         return state.copy(configurations=profiles,subscriptions=state.subscriptions.filterNot { it.id==id }+sub,

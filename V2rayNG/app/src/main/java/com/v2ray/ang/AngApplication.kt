@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.simple.PanelSyncScheduler
 
 class AngApplication : MultiDexApplication() {
     companion object {
@@ -48,14 +49,18 @@ class AngApplication : MultiDexApplication() {
 
         MMKV.initialize(this)
 
-        // Initialize WorkManager with the custom configuration
-        WorkManager.initialize(this, workManagerConfiguration)
-        com.v2ray.ang.simple.PanelManager.cancelAutomaticSync(this)
-
         // Ensure critical preference defaults are present in MMKV early
         // SimpleBLT sends all traffic through the selected tunnel. Both the UI and
         // VPN process must avoid restoring the full client's geodata routing presets.
         SettingsManager.initApp(this, initializeRoutingPresets = false)
+        val mainProcess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) getProcessName() == packageName
+        else runCatching { java.io.File("/proc/self/cmdline").readText().substringBefore('\u0000') == packageName }
+            .getOrDefault(false)
+        if (mainProcess) {
+            WorkManager.initialize(this, workManagerConfiguration)
+            WorkManager.getInstance(this).cancelUniqueWork("tndtun-panel-sync")
+            PanelSyncScheduler.restore(this)
+        }
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO)
 
         es.dmoral.toasty.Toasty.Config.getInstance()

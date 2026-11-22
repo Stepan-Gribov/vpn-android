@@ -12,6 +12,9 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.text.TextUtils
+import android.text.format.DateUtils
+import android.util.TypedValue
 import android.view.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,8 +24,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.TextViewCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.Gson
+import com.v2ray.ang.R
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.core.ManagedDnsTunnelResolverDiscovery
@@ -231,6 +236,7 @@ class SimpleActivity : AppCompatActivity() {
         syncConnectionState()
         if (::store.isInitialized) {
             lifecycleScope.launch { withContext(Dispatchers.IO) { store.reload(); PanelAccess.enforce(applicationContext,store) }; render() }
+            PanelSyncScheduler.restore(applicationContext, catchUp = true)
         }
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -331,7 +337,25 @@ class SimpleActivity : AppCompatActivity() {
             PanelManager.refreshManually(applicationContext)
         }.also { PanelButtons.style(it) }.apply { isEnabled=!PanelManager.busy },LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart=dp(8) })
         root.addView(subscription)
-        gap(root,16)
+        val subscriptionCaption = row()
+        subscriptionCaption.addView(View(this), LinearLayout.LayoutParams(0, -1, 1f))
+        store.subscriptions.maxOfOrNull { it.lastSync }?.takeIf { it > 0 }?.let { lastSync ->
+            val timestamp = lastSync * 1000
+            val flags = DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_TIME
+            val display = DateUtils.formatDateTime(this, timestamp, if (DateUtils.isToday(timestamp)) flags
+                else flags or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_NUMERIC_DATE)
+            subscriptionCaption.addView(text(display, 11, muted).apply {
+                id = R.id.subscription_last_sync
+                gravity = Gravity.CENTER
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
+                includeFontPadding = false
+                contentDescription = getString(R.string.subscription_last_sync_description,
+                    DateUtils.formatDateTime(this@SimpleActivity, timestamp, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME))
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 8, 11, 1, TypedValue.COMPLEX_UNIT_DIP)
+            }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(8) })
+        }
+        root.addView(subscriptionCaption, LinearLayout.LayoutParams(-1, dp(16)))
         statusPanel = column().apply { setPadding(dp(20), dp(10), dp(20), dp(10)); background = bg(panel, 22) }
         root.addView(statusPanel); renderStatus(); gap(root, 24)
         val modes = row().apply { background = bg(Color.rgb(238, 239, 241), 9); setPadding(dp(2), dp(2), dp(2), dp(2)) }

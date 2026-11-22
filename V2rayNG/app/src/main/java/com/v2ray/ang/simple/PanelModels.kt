@@ -33,8 +33,15 @@ data class PanelDns(val domain: String, val publicKey: String, val resolver: Str
 class ActivationInput(val code: String, val trust: PanelTrust) { override fun toString() = "ActivationInput" }
 data class ManagedProfile(val subscriptionID: String, val inboundID: String, val nodeID: String,
     val generation: Long, val title: String, val location: String, val credentialScope: String = "device")
+data class SubscriptionSyncPolicy(val enabled: Boolean, val intervalMinutes: Int) {
+    init { require(intervalMinutes in 15..1440) { "Неверный интервал обновления подписки." } }
+
+    internal fun nextAfter(epochSeconds: Long): Long = epochSeconds + intervalMinutes * 60L
+}
+
 data class PanelSettings(val autoCaptcha: Boolean, val autoRecovery: Boolean, val turnCheckInterval: Int,
-    val dnsServers: List<String>, val dnsTunnel: PanelDns?, val splitTunneling: SplitTunnelSettings)
+    val dnsServers: List<String>, val dnsTunnel: PanelDns?, val splitTunneling: SplitTunnelSettings,
+    val subscriptionSync: SubscriptionSyncPolicy? = null)
 class PanelPackage(val revision: Long, val nonce: String, val issuedAt: String, val clientID: String,
     val clientName: String, val deviceID: String, val status: String, val expiresAt: Long?,
     val syncAfterSeconds: Long, val profiles: List<SimpleConfiguration>, val settings: PanelSettings?) {
@@ -43,7 +50,16 @@ class PanelPackage(val revision: Long, val nonce: String, val issuedAt: String, 
 class PanelSubscription(val id: String, val trust: PanelTrust, val deviceID: String, val token: String,
     val clientID: String, val clientName: String, val revision: Long, val status: String,
     val expiresAt: Long?, val syncAfterSeconds: Long, val lastSync: Long,
-    val settings: PanelSettings?, val needsActivation: Boolean = false, val activationCode: String? = null) {
+    val settings: PanelSettings?, val needsActivation: Boolean = false, val activationCode: String? = null,
+    val nextSyncAt: Long = 0) {
+    internal val automaticSyncAt: Long? get() = nextSyncAt.takeIf {
+        it > 0 && status == "active" && !needsActivation && settings?.subscriptionSync?.enabled == true
+    }
+
+    internal fun withSyncState(needsActivation: Boolean = this.needsActivation, nextSyncAt: Long = this.nextSyncAt) =
+        PanelSubscription(id, trust, deviceID, token, clientID, clientName, revision, status, expiresAt,
+            syncAfterSeconds, lastSync, settings, needsActivation, activationCode, nextSyncAt)
+
     fun accessAllowed(now: Long) = status == "active" && (expiresAt == null || now < expiresAt)
     fun statusText(now: Long): String = when {
         status == "revoked" -> "Доступ отозван"
@@ -209,7 +225,13 @@ object PanelContract {
         val tunnel=o.get("dnsTunnel").let { require(it!=null); if(it.isJsonNull) null else dns(PanelJson.obj(it)) }
         val split=PanelJson.obj(o.get("splitTunneling")); ApplicationBackup.validateSplitJson(split)
         val settings=com.google.gson.Gson().fromJson(split,SplitTunnelSettings::class.java).validated()
-        return PanelSettings(PanelJson.bool(o,"autoCaptcha"),PanelJson.bool(o,"autoRecovery"),interval.toInt(),servers,tunnel,settings)
+        val subscriptionSync = o.get("subscriptionSync")?.let { raw ->
+            val policy = PanelJson.obj(raw)
+            val minutes = PanelJson.number(policy, "intervalMinutes")
+            require(minutes in 15..1440) { "Неверный интервал обновления подписки." }
+            SubscriptionSyncPolicy(PanelJson.bool(policy, "enabled"), minutes.toInt())
+        }
+        return PanelSettings(PanelJson.bool(o,"autoCaptcha"),PanelJson.bool(o,"autoRecovery"),interval.toInt(),servers,tunnel,settings,subscriptionSync)
     }
     internal fun utf8(bytes: ByteArray): String = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()

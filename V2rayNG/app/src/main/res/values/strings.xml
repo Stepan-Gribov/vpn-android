@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="subscription_last_sync_description">Last successful subscription update %1$s</string>
     <string name="app_name" translatable="false">TnDtun</string>
     <string name="connection_state_connecting">Connecting…</string>
     <string name="connection_state_stopping">Disconnecting…</string>

@@ -181,6 +181,7 @@ class PanelActivationActivity: AppCompatActivity() {
                                 store.removeSubscription(sub.id)
                                 PanelAccess.enforce(applicationContext,store)
                             }
+                            PanelSyncScheduler.restore(applicationContext)
                             model.text=""; refresh(); progress.text="Подписка удалена"; progress.visibility=View.VISIBLE
                         }
                     }.show()
