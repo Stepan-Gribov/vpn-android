@@ -4,7 +4,7 @@
   "algorithm": "Ed25519",
   "key_id": "0000000000000000",
   "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  "api_base": "https://panel.example.invalid/",
+  "api_base": "https://panel.example.invalid/v1",
   "dns_transport": {
     "domain": "dns.example.invalid",
     "publicKey": "0000000000000000000000000000000000000000000000000000000000000000",

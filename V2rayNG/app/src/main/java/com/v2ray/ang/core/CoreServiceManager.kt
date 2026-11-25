@@ -27,6 +27,10 @@ import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.simple.SimpleRuntime
+import com.v2ray.ang.simple.SimpleStore
+import com.v2ray.ang.simple.TemporaryFullTunnel
+import com.v2ray.ang.simple.TemporaryFullTunnelPolicy
 import com.v2ray.ang.service.AmneziaWgVpnService
 import com.v2ray.ang.service.CoreProxyOnlyService
 import com.v2ray.ang.service.CoreRootService
@@ -253,7 +257,7 @@ object CoreServiceManager {
      * @throws Exception if the foreground service fails to start.
      */
     @Throws(Exception::class)
-    private fun startContextService(context: Context, quiet: Boolean = false) {
+    private fun startContextService(context: Context) {
         if (isEngineRunning()) {
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: A tunnel is already running")
             return
@@ -285,17 +289,15 @@ object CoreServiceManager {
 //        val result = V2rayConfigUtil.getV2rayConfig(context, guid)
 //        if (!result.status) error(result.errorMessage.ifBlank { "Failed to get V2Ray config" })
 
-        if (!quiet && config.insecure == true) {
+        if (config.insecure == true) {
             context.toastError(R.string.toast_allow_insecure_deprecated)
             context.toastError(R.string.toast_allow_insecure_deprecated)
         }
 
-        if (!quiet) {
-            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
-                context.toast(R.string.toast_warning_pref_proxysharing_short)
-            } else {
-                context.toast(R.string.toast_services_start)
-            }
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
+            context.toast(R.string.toast_warning_pref_proxysharing_short)
+        } else {
+            context.toast(R.string.toast_services_start)
         }
 
         val isTurnProfile = VkTurnManager.isTurnProfile(config)
@@ -378,7 +380,7 @@ object CoreServiceManager {
             }
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
-            if (handlingConnectionDrop.get()) {
+            if (handlingConnectionDrop.get() || isSwitchingTemporaryFullTunnel()) {
                 NotificationManager.showRecoveryForeground(
                     service,
                     service.getString(R.string.reconnect_notification_waiting_text),
@@ -401,7 +403,7 @@ object CoreServiceManager {
     @Throws(Exception::class)
     private fun doStartCoreLoop(service: Service, vpnInterface: ParcelFileDescriptor?) {
         expectedShutdown.set(false)
-        preserveServiceForRecovery.set(false)
+        preserveServiceForRecovery.set(isSwitchingTemporaryFullTunnel())
         // A helper PID exists before ensureForProfile returns. Register first so
         // Disconnect during that startup window is queued, not lost; desired also
         // catches a stop sent just before registration from the UI process.
@@ -504,7 +506,7 @@ object CoreServiceManager {
             error("Core failed to start")
         }
         result?.routingPolicy?.let(com.v2ray.ang.simple.RoutingPolicyState::recordApplied)
-        com.v2ray.ang.simple.TemporaryFullTunnel.started(service)
+        TemporaryFullTunnel.started(service)
 
         if (browserDialer != null) {
             browserDialer!!.stop()
@@ -579,7 +581,7 @@ object CoreServiceManager {
      * @return True if the core was stopped successfully, false otherwise.
      */
     fun stopCoreLoop(keepForegroundForRecovery: Boolean = false): Boolean {
-        com.v2ray.ang.simple.TemporaryFullTunnel.stopped()
+        TemporaryFullTunnel.stopped()
         stopHealthMonitor()
         cancelTurnCaptchaWatchdog()
         turnNotReadySince.set(0L)
@@ -1623,7 +1625,10 @@ object CoreServiceManager {
         }
     }
 
-    private fun cancelAutomaticRecovery(context: Context? = null) {
+    private fun cancelAutomaticRecovery(
+        context: Context? = null,
+        phase: VpnRecoveryPhase = VpnRecoveryPhase.DISCONNECTED,
+    ) {
         reconnectGeneration.incrementAndGet()
         reconnectJob?.cancel()
         reconnectJob = null
@@ -1631,7 +1636,7 @@ object CoreServiceManager {
         stopHealthMonitor()
         cancelTurnCaptchaWatchdog()
         turnNotReadySince.set(0L)
-        transitionRecovery(VpnRecoveryPhase.DISCONNECTED)
+        transitionRecovery(phase)
         context?.let(NotificationManager::cancelConnectionStatus)
     }
 
@@ -2218,49 +2223,82 @@ object CoreServiceManager {
      * Handles registration, service control, and screen events.
      */
     private val fullTunnelSwitching = AtomicBoolean(false)
+    internal fun isSwitchingTemporaryFullTunnel() = fullTunnelSwitching.get()
+
     private fun switchTemporaryFullTunnel(command: String) {
-        val control=serviceControl?.get() ?: return
-        val context=control.getService().applicationContext
-        if(!fullTunnelSwitching.compareAndSet(false,true)) return
+        val control = serviceControl?.get() ?: return
+        val context = control.getService().applicationContext
+        val id = MmkvManager.decodeSettingsString(SimpleRuntime.ACTIVE_ID) ?: return
+        val requestedGeneration = reconnectGeneration.get()
+        val expiryToken = if (command.startsWith("expire:")) command.substringAfter(':').toLongOrNull() else null
+        if (command != "on" && command != "off" && expiryToken == null) return
+        if (!fullTunnelSwitching.compareAndSet(false, true)) return
+
+        fun stillWanted(generation: Long) =
+            SettingsManager.isConnectionDesired() && reconnectGeneration.get() == generation &&
+                serviceControl?.get() === control && MmkvManager.decodeSettingsString(SimpleRuntime.ACTIVE_ID) == id
+
         backgroundScope.launch {
+            var switchGeneration: Long? = null
+            var previousLease: TemporaryFullTunnel.Lease? = null
             try {
-                val store=com.v2ray.ang.simple.SimpleStore(context)
-                val id=MmkvManager.decodeSettingsString(com.v2ray.ang.simple.SimpleRuntime.ACTIVE_ID) ?: return@launch
-                val profile=store.configurations.firstOrNull { it.id==id } ?: return@launch
-                if(!com.v2ray.ang.simple.TemporaryFullTunnelPolicy.supported(profile.mode,store.amneziaSplitEnabled)) return@launch
-                val expiryToken=command.removePrefix("expire:").takeIf { command.startsWith("expire:") }?.toLongOrNull()
-                if(command !in listOf("on","off") && expiryToken==null) return@launch
-                if(!SettingsManager.isConnectionDesired()) return@launch
-                if(expiryToken!=null && !com.v2ray.ang.simple.TemporaryFullTunnel.shouldExpire(expiryToken)) return@launch
-                val enabled=command=="on"
-                if(enabled && com.v2ray.ang.simple.TemporaryFullTunnel.active(id)) return@launch
-                if(enabled && (!activeConnection.get() || handlingConnectionDrop.get())) return@launch
-                cancelAutomaticRecovery(context)
-                val switchGeneration=reconnectGeneration.get()
-                com.v2ray.ang.simple.TemporaryFullTunnel.prepare(id,enabled,store.fullTunnelMinutes)
-                transitionRecovery(VpnRecoveryPhase.SWITCHING_PROFILE)
-                control.stopService()
-                val deadline=SystemClock.elapsedRealtime()+10_000
-                while(com.v2ray.ang.simple.DaemonConnectionState.hasLiveService() || isEngineRunning()) {
-                    check(SystemClock.elapsedRealtime()<deadline) { "Previous VPN has not stopped" }
-                    delay(100)
+                val store = SimpleStore(context)
+                val profile = store.configurations.firstOrNull { it.id == id } ?: return@launch
+                if (!TemporaryFullTunnelPolicy.supported(profile.mode, store.amneziaSplitEnabled)) return@launch
+                val enabled = command == "on"
+                val generation = withContext(Dispatchers.Main) {
+                    if (!stillWanted(requestedGeneration)) return@withContext null
+                    if (expiryToken != null && !TemporaryFullTunnel.shouldExpire(expiryToken)) return@withContext null
+                    if (expiryToken == null && enabled == TemporaryFullTunnel.active(id)) return@withContext null
+                    if (enabled && (!activeConnection.get() || handlingConnectionDrop.get())) return@withContext null
+
+                    cancelAutomaticRecovery(context, VpnRecoveryPhase.SWITCHING_PROFILE)
+                    val nextGeneration = reconnectGeneration.get()
+                    switchGeneration = nextGeneration
+                    previousLease = TemporaryFullTunnel.currentLease(id)
+                    // Destroying the service would invalidate the restart generation.
+                    check(control.prepareForRecovery()) { "Could not prepare VPN for routing change" }
+                    nextGeneration
+                } ?: return@launch
+                val stopped = awaitCoreStopped(generation)
+                withContext(Dispatchers.Main) {
+                    if (!stillWanted(generation)) return@withContext
+                    check(stopped) { "Previous VPN core has not stopped" }
+                    TemporaryFullTunnel.prepare(id, enabled, store.fullTunnelMinutes)
+                    check(control.startRecoveryAttempt()) { "Could not restart VPN with updated routing" }
                 }
-                delay(RECONNECT_CORE_STOP_SETTLE_MS)
-                // A manual Disconnect/profile switch during shutdown wins over this request.
-                if(!SettingsManager.isConnectionDesired() || reconnectGeneration.get()!=switchGeneration ||
-                    MmkvManager.decodeSettingsString(com.v2ray.ang.simple.SimpleRuntime.ACTIVE_ID)!=id) {
-                    com.v2ray.ang.simple.TemporaryFullTunnel.prepare("",false,0)
-                    return@launch
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "Temporary full-tunnel switch failed", e)
+                val generation = switchGeneration
+                val prepared = generation != null && withContext(Dispatchers.Main) {
+                    stillWanted(generation) && runCatching { control.prepareForRecovery() }.getOrDefault(false)
                 }
-                withContext(Dispatchers.Main) { startContextService(context, quiet=true) }
-            } catch(e: CancellationException) { throw e }
-            catch(e: Exception) {
-                com.v2ray.ang.simple.TemporaryFullTunnel.prepare("",false,0)
-                LogUtil.e(AppConfig.TAG,"Temporary full-tunnel switch failed",e)
-                SettingsManager.setConnectionDesired(false)
-                transitionRecovery(VpnRecoveryPhase.DISCONNECTED)
-                MessageUtil.sendMsg2UI(context,AppConfig.MSG_STATE_START_FAILURE,"Не удалось применить режим. Подключите VPN повторно.")
-            } finally { fullTunnelSwitching.set(false) }
+                val coreStopped = prepared && awaitCoreStopped(checkNotNull(generation))
+                withContext(Dispatchers.Main) {
+                    if (!stillWanted(generation ?: requestedGeneration)) return@withContext
+                    if (generation == null) {
+                        MessageUtil.sendMsg2UI(context, AppConfig.MSG_STATE_START_FAILURE, "Не удалось применить режим.")
+                        return@withContext
+                    }
+                    if (coreStopped) {
+                        TemporaryFullTunnel.restoreForRestart(previousLease)
+                        if (runCatching { control.startRecoveryAttempt() }.getOrDefault(false)) {
+                            MessageUtil.sendMsg2UI(context, AppConfig.MSG_STATE_START_FAILURE,
+                                "Не удалось применить режим. Восстановлена предыдущая маршрутизация.")
+                            return@withContext
+                        }
+                    }
+                    TemporaryFullTunnel.restoreForRestart(null)
+                    SettingsManager.setConnectionDesired(false)
+                    control.stopService()
+                    MessageUtil.sendMsg2UI(context, AppConfig.MSG_STATE_START_FAILURE,
+                        "Не удалось применить режим. Подключите VPN повторно.")
+                }
+            } finally {
+                fullTunnelSwitching.set(false)
+            }
         }
     }
 
@@ -2356,7 +2394,7 @@ object CoreServiceManager {
                     }
                 }
 
-                com.v2ray.ang.simple.TemporaryFullTunnel.MESSAGE -> {
+                TemporaryFullTunnel.MESSAGE -> {
                     switchTemporaryFullTunnel(intent.getStringExtra("content").orEmpty())
                 }
                 AppConfig.MSG_MEASURE_DELAY -> {

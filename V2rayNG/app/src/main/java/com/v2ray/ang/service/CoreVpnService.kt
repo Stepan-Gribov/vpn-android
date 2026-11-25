@@ -222,7 +222,7 @@ open class CoreVpnService : VpnService(), ServiceControl {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service command received")
-        if (isRunning && CoreServiceManager.isRunning()) {
+        if (CoreServiceManager.isSwitchingTemporaryFullTunnel() || (isRunning && CoreServiceManager.isRunning())) {
             LogUtil.i(AppConfig.TAG, "StartCore-VPN: Ignoring duplicate start for live tunnel")
             return if(CoreServiceManager.automaticRecoveryAllowedForSelectedProfile()) START_STICKY else START_NOT_STICKY
         }

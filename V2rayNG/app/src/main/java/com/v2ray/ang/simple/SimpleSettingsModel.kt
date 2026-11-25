@@ -23,7 +23,7 @@ class SimpleSettingsModel : ViewModel() {
     var busy = true; private set
     var autoCaptcha = true
     var autoConnectOnRestart = false
-    var amneziaSplitEnabled = false
+    var amneziaSplitEnabled = TemporaryFullTunnelPolicy.DEFAULT_AMNEZIA_SPLIT_ENABLED
     var fullTunnelMinutes = TemporaryFullTunnelPolicy.DEFAULT_MINUTES
     var autoRecovery = true
     var excludedApplications: List<String> = emptyList(); private set

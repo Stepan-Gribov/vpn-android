@@ -4,6 +4,7 @@ package com.v2ray.ang.simple
 internal object TemporaryFullTunnelPolicy {
     val durations = listOf(5, 15, 30, 60, 0)
     const val DEFAULT_MINUTES = 15
+    const val DEFAULT_AMNEZIA_SPLIT_ENABLED = true
     fun supported(mode: String, amneziaSplit: Boolean) = mode == "turn" || (mode == "amnezia" && amneziaSplit)
     fun split(saved: SplitTunnelSettings, mode: String, amneziaSplit: Boolean, fullTunnel: Boolean) =
         if (supported(mode, amneziaSplit) && !fullTunnel) saved else saved.copy(mode = SplitTunnelSettings.DISABLED)

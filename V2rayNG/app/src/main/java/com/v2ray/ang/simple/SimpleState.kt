@@ -12,7 +12,7 @@ internal data class SimpleState(
     val excludedApplications: List<String> = emptyList(),
     val removedSubscriptions: List<String> = emptyList(),
     val autoConnectOnRestart: Boolean = false,
-    val amneziaSplitEnabled: Boolean = false,
+    val amneziaSplitEnabled: Boolean = TemporaryFullTunnelPolicy.DEFAULT_AMNEZIA_SPLIT_ENABLED,
     val fullTunnelMinutes: Int = TemporaryFullTunnelPolicy.DEFAULT_MINUTES,
     val turnSessionCount: Int = com.v2ray.ang.core.TurnSessionCount.DEFAULT,
 )

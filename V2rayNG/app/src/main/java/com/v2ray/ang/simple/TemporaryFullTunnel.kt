@@ -15,20 +15,23 @@ internal object TemporaryFullTunnel {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var expiryJob: Job? = null
     private var preserveNextStart = false // Deliberately not persisted across process death/reboot.
-    private data class Lease(val profile: String, val started: Long, val expires: Long)
+    data class Lease(val profile: String, val started: Long, val expires: Long)
     private fun read(): Lease? = runCatching {
         gson.fromJson(MmkvManager.decodeSettingsString(KEY, ""), Lease::class.java)
     }.getOrNull()
-    fun active(profile: String?): Boolean = profile != null && read()?.let {
+    fun active(profile: String?): Boolean = profile != null && currentLease(profile) != null
+    fun currentLease(profile: String): Lease? = read()?.takeIf {
         TemporaryFullTunnelPolicy.valid(it.profile, profile, it.started, it.expires, SystemClock.elapsedRealtime())
-    } == true
+    }
     @Synchronized fun prepare(profile: String, enabled: Boolean, minutes: Int) {
         require(minutes in TemporaryFullTunnelPolicy.durations)
-        expiryJob?.cancel(); expiryJob = null
-        preserveNextStart = enabled
         val now = SystemClock.elapsedRealtime()
-        MmkvManager.encodeSettings(KEY, if (enabled) gson.toJson(Lease(profile, now,
-            if (minutes == 0) 0 else now + minutes * 60_000L)) else "")
+        restoreForRestart(if (enabled) Lease(profile, now, if (minutes == 0) 0 else now + minutes * 60_000L) else null)
+    }
+    @Synchronized fun restoreForRestart(lease: Lease?) {
+        expiryJob?.cancel(); expiryJob = null
+        preserveNextStart = lease != null
+        MmkvManager.encodeSettings(KEY, lease?.let(gson::toJson).orEmpty())
     }
     @Synchronized fun beforeConnectionStart(profile: String) {
         val keep = preserveNextStart && active(profile)
@@ -36,8 +39,7 @@ internal object TemporaryFullTunnel {
         if (!keep) MmkvManager.encodeSettings(KEY, "")
     }
     @Synchronized fun stopped() {
-        expiryJob?.cancel(); expiryJob = null
-        if (!preserveNextStart) MmkvManager.encodeSettings(KEY, "")
+        restoreForRestart(null)
     }
     @Synchronized fun started(context: Context) {
         expiryJob?.cancel()

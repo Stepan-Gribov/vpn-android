@@ -24,7 +24,7 @@ data class ApplicationBackup(
     val ipv6Enabled: Boolean = false,
     val excludedApplications: List<String> = emptyList(),
     val autoConnectOnRestart: Boolean = false,
-    val amneziaSplitEnabled: Boolean = false,
+    val amneziaSplitEnabled: Boolean = TemporaryFullTunnelPolicy.DEFAULT_AMNEZIA_SPLIT_ENABLED,
     val fullTunnelMinutes: Int = TemporaryFullTunnelPolicy.DEFAULT_MINUTES,
     val turnSessionCount: Int = com.v2ray.ang.core.TurnSessionCount.DEFAULT,
 ) {
@@ -59,7 +59,8 @@ data class ApplicationBackup(
                 root.addProperty("format", FORMAT)
                 if (!root.has("fullTunnelMinutes")) root.addProperty("fullTunnelMinutes", TemporaryFullTunnelPolicy.DEFAULT_MINUTES)
                 require(root.get("fullTunnelMinutes").toString() in TemporaryFullTunnelPolicy.durations.map(Int::toString))
-                if(root.has("amneziaSplitEnabled")) requireBoolean(root,"amneziaSplitEnabled")
+                if (root.has("amneziaSplitEnabled")) requireBoolean(root, "amneziaSplitEnabled")
+                else root.addProperty("amneziaSplitEnabled", TemporaryFullTunnelPolicy.DEFAULT_AMNEZIA_SPLIT_ENABLED)
                 if (!root.has("turnCheckInterval")) root.addProperty("turnCheckInterval", 30)
                 if (!root.has("turnSessionCount")) root.addProperty("turnSessionCount", com.v2ray.ang.core.TurnSessionCount.DEFAULT)
                 require(root.get("turnSessionCount").toString() in com.v2ray.ang.core.TurnSessionCount.choices.map(Int::toString)) { "Неверное число каналов TURN." }

@@ -237,7 +237,7 @@ class SimpleSettingsActivity : AppCompatActivity() {
             setOnCheckedChangeListener { _,value->if(!model.busy) model.amneziaSplitEnabled=value }
         }
         section(parent,"Где применяется сплит-туннель").addView(amneziaSplit)
-        hint(parent,"По умолчанию адресные правила и исключения приложений работают только в VK TURN proxy. Для Amnezia их можно включить здесь. В DNS-режиме весь трафик идёт через туннель. Push-правила сохраняются отдельно.")
+        hint(parent,"Адресные правила и исключения приложений по умолчанию работают в VK TURN proxy и Amnezia. Для Amnezia их можно отключить здесь. В DNS-режиме весь трафик идёт через туннель. Push-правила сохраняются отдельно.")
         val push=section(parent,"Push-уведомления через VPN")
         pushApple=Switch(this).apply {
             text="Apple"; textSize=16f; minHeight=dp(52)
