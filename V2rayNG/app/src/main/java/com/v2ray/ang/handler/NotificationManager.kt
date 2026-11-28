@@ -163,15 +163,16 @@ object NotificationManager {
 
     /** Shows TURN verification state without requiring an Activity to be alive. */
     fun showTurnCaptchaRequired(context: Context, automatic: Boolean) {
+        val manualAllowed = !VkTurnManager.isAutoCaptchaEnabled()
         val text = context.getString(
-            if (automatic) {
-                R.string.vk_turn_captcha_required_status
-            } else {
-                R.string.vk_turn_captcha_action_required
+            when {
+                automatic -> R.string.vk_turn_captcha_required_status
+                manualAllowed -> R.string.vk_turn_captcha_action_required
+                else -> R.string.vk_turn_captcha_manual_needed
             },
         )
         updateForegroundStatus(context, context.getString(R.string.vk_turn_captcha_title), text)
-        if (automatic) {
+        if (automatic || !manualAllowed) {
             cancelConnectionStatus(context)
             return
         }

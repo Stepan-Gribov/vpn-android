@@ -55,6 +55,10 @@ class VkCaptchaActivity : BaseActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (VkTurnManager.isAutoCaptchaEnabled()) {
+            finish()
+            return
+        }
         setContentViewWithToolbar(
             binding.root,
             showHomeAsUp = true,
@@ -124,15 +128,20 @@ class VkCaptchaActivity : BaseActivity() {
             uri.port == 8765 &&
             uri.host?.lowercase() in setOf("localhost", "127.0.0.1", "::1")
 
+    override fun onResume() {
+        super.onResume()
+        if (VkTurnManager.isAutoCaptchaEnabled()) finish()
+    }
+
     override fun onDestroy() {
         if (receiverRegistered) {
             unregisterReceiver(statusReceiver)
             receiverRegistered = false
+            binding.webView.stopLoading()
+            binding.webView.loadUrl("about:blank")
+            binding.webView.removeAllViews()
+            binding.webView.destroy()
         }
-        binding.webView.stopLoading()
-        binding.webView.loadUrl("about:blank")
-        binding.webView.removeAllViews()
-        binding.webView.destroy()
         super.onDestroy()
     }
 

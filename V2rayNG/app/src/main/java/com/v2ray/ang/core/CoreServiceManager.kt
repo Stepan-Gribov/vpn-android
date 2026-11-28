@@ -2231,7 +2231,8 @@ object CoreServiceManager {
         val id = MmkvManager.decodeSettingsString(SimpleRuntime.ACTIVE_ID) ?: return
         val requestedGeneration = reconnectGeneration.get()
         val expiryToken = if (command.startsWith("expire:")) command.substringAfter(':').toLongOrNull() else null
-        if (command != "on" && command != "off" && expiryToken == null) return
+        val minutes = TemporaryFullTunnelPolicy.requestedMinutes(command, id)
+        if (minutes == null && command != "off" && expiryToken == null) return
         if (!fullTunnelSwitching.compareAndSet(false, true)) return
 
         fun stillWanted(generation: Long) =
@@ -2245,7 +2246,7 @@ object CoreServiceManager {
                 val store = SimpleStore(context)
                 val profile = store.configurations.firstOrNull { it.id == id } ?: return@launch
                 if (!TemporaryFullTunnelPolicy.supported(profile.mode, store.amneziaSplitEnabled)) return@launch
-                val enabled = command == "on"
+                val enabled = minutes != null
                 val generation = withContext(Dispatchers.Main) {
                     if (!stillWanted(requestedGeneration)) return@withContext null
                     if (expiryToken != null && !TemporaryFullTunnel.shouldExpire(expiryToken)) return@withContext null
@@ -2264,7 +2265,7 @@ object CoreServiceManager {
                 withContext(Dispatchers.Main) {
                     if (!stillWanted(generation)) return@withContext
                     check(stopped) { "Previous VPN core has not stopped" }
-                    TemporaryFullTunnel.prepare(id, enabled, store.fullTunnelMinutes)
+                    TemporaryFullTunnel.prepare(id, enabled, minutes ?: TemporaryFullTunnelPolicy.UNTIL_RESTART)
                     check(control.startRecoveryAttempt()) { "Could not restart VPN with updated routing" }
                 }
             } catch (e: CancellationException) {

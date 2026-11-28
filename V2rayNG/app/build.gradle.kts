@@ -12,7 +12,7 @@ android {
         applicationId = "com.stepangribov.simpleblt.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 44
+        versionCode = 45
         versionName = "0.1.4"
         multiDexEnabled = true
         buildConfigField("String", "DISTRIBUTION", "\"Direct\"")

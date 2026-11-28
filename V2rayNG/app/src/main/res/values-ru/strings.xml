@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="subscription_last_sync_description">Последнее успешное обновление подписки %1$s</string>
+    <string name="simple_vk_verification_hint">Когда VK запросит проверку, нажмите Verify VK на главном экране.</string>
+    <string name="vk_turn_captcha_manual_needed">VK требует ручной проверки</string>
     <string name="action_ping_all">Реал-пинг</string>
     <string name="action_sort_fastest">Сорт. по пингу</string>
     <string name="profiles_title">Доступные маршруты</string>

@@ -31,6 +31,7 @@ import com.v2ray.ang.R
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.core.ManagedDnsTunnelResolverDiscovery
+import com.v2ray.ang.core.VkTurnManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.ui.VkCaptchaActivity
 import com.v2ray.ang.util.MessageUtil
@@ -55,7 +56,6 @@ class SimpleActivity : AppCompatActivity() {
     private var active = false
     private var preparing = false
     private var captcha = false
-    private var captchaNeedsUser = false
     private var recoveryFailed = false
     private var recoveryAttempt = ""
     private var ping: Long? = null
@@ -75,6 +75,7 @@ class SimpleActivity : AppCompatActivity() {
     private var draft: SimpleConfiguration? = null
     private var sheet: Dialog? = null
     private var sheetKind: String? = null
+    private var fullTunnelDialog: AlertDialog? = null
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) pending?.let(::startConnection)
         else { pending = null; preparing = false; render(); showError("VPN permission was not granted.") }
@@ -150,13 +151,14 @@ class SimpleActivity : AppCompatActivity() {
         connected = snapshot.connected
         active = snapshot.active
         captcha = snapshot.captchaPending
-        captchaNeedsUser = snapshot.captchaNeedsUser
+        if (!connected) fullTunnelDialog?.dismiss()
         recoveryFailed = snapshot.phase == "FAILED"
         status = when (snapshot.phase) {
             "CONNECTED" -> "Connected"
             "WAITING_FOR_NETWORK" -> "Waiting for network…"
             "TURN_CAPTCHA" -> "Verifying VK in background…"
-            "TURN_CAPTCHA_MANUAL" -> "VK verification required"
+            "TURN_CAPTCHA_MANUAL" -> if (VkTurnManager.isAutoCaptchaEnabled()) getString(R.string.vk_turn_captcha_manual_needed)
+                else "VK verification required"
             "STARTING_TURN", "TURN_READY", "STARTING_CORE", "VERIFYING_CONNECTION", "DNS_RECONNECTING" -> "Connecting…"
             "STOPPING" -> "Disconnecting…"
             "FAILED" -> "Connection lost"
@@ -245,12 +247,13 @@ class SimpleActivity : AppCompatActivity() {
 
     private fun maybeExplainBatteryOptimization() {
         if (!::store.isInitialized || isFinishing || isDestroyed || !window.decorView.hasWindowFocus() ||
-            notificationPermissionPending || sheet?.isShowing == true || preparing || pending != null ||
+            notificationPermissionPending || sheet?.isShowing == true || fullTunnelDialog?.isShowing == true || preparing || pending != null ||
             !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
         BatteryOptimizationPrompt.showOnce(this)
     }
 
     override fun onStop() {
+        fullTunnelDialog?.dismiss()
         panelEventsJob?.cancel()
         stateSyncJob?.cancel()
         stateSyncJob = null
@@ -455,7 +458,8 @@ class SimpleActivity : AppCompatActivity() {
         val selected=selectedStatusProfile()
         val turn=selected?.mode=="turn"
         val statuses=listOf("Preparing…","Disconnected","Connecting…","Connected","Disconnecting…","Connection lost")+
-            if(turn) listOf("Reconnecting…","Waiting for network…","Verifying VK in background…","VK verification required") else emptyList()
+            if(turn) listOf("Reconnecting…","Waiting for network…","Verifying VK in background…","VK verification required",
+                getString(R.string.vk_turn_captcha_manual_needed)) else emptyList()
         val top = row()
         top.addView(View(this).apply {
             background = bg(if (connected) green else if (active || preparing) Color.rgb(255, 149, 0) else muted, 4)
@@ -522,36 +526,69 @@ class SimpleActivity : AppCompatActivity() {
         }
         actions.addView(primary,LinearLayout.LayoutParams(-2,-2).apply { marginEnd=dp(8) })
         val fullTunnel=Switch(this).apply {
-            tag="status-full-tunnel"; text="Всё в туннель"; textSize=13f
+            tag="status-full-tunnel"; text=getString(R.string.simple_full_tunnel_title); textSize=13f
             minHeight=dp(48); gravity=Gravity.END or Gravity.CENTER_VERTICAL
             showText=false; switchPadding=dp(8)
             isChecked=connected && TemporaryFullTunnel.active(selected?.id)
             isEnabled=connected && !preparing
             visibility=if(TemporaryFullTunnelPolicy.supported(selected?.mode.orEmpty(),store.amneziaSplitEnabled)) View.VISIBLE else View.INVISIBLE
-            contentDescription="Всё в туннель временно"
+            contentDescription=getString(R.string.simple_full_tunnel_title)
             setOnCheckedChangeListener { _,value ->
-                isEnabled=false
                 setOnCheckedChangeListener(null)
                 isChecked=!value // Show the applied state until the service acknowledges by reconnecting.
-                MessageUtil.sendMsg2Service(this@SimpleActivity,TemporaryFullTunnel.MESSAGE,if(value) "on" else "off")
-                lifecycleScope.launch { delay(1_000); syncConnectionState(); renderStatus() }
+                if (value) {
+                    renderStatus()
+                    selected?.let { confirmFullTunnel(it.id) }
+                } else applyFullTunnel("off")
             }
         }
         actions.addView(fullTunnel,LinearLayout.LayoutParams(0,-2,1f))
-        if(turn && (store.autoRecovery || captcha || !store.autoCaptcha)) {
-            val label=if(recoveryFailed) "Retry connection" else "Verify VK"
-            val auxiliary=button(label,reserved=listOf("Retry connection","Verify VK")) {
-                if(recoveryFailed) selectedStatusProfile()?.let(::connect) else openCaptcha()
-            }.apply {
-                gravity=Gravity.START or Gravity.CENTER_VERTICAL
-                visibility=if(recoveryFailed || captchaNeedsUser || (captcha && !store.autoCaptcha)) View.VISIBLE else View.INVISIBLE
+        if (turn && (recoveryFailed || (captcha && !VkTurnManager.isAutoCaptchaEnabled()))) {
+            val auxiliary = if (recoveryFailed) {
+                button("Retry connection") { selectedStatusProfile()?.let(::connect) }
+            } else {
+                button("Verify VK") { openCaptcha() }
             }
-            if(auxiliary.visibility==View.VISIBLE) {
-                fullTunnel.visibility=View.GONE
-                actions.addView(auxiliary,LinearLayout.LayoutParams(0,-2,1f))
-            }
+            auxiliary.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            fullTunnel.visibility = View.GONE
+            actions.addView(auxiliary, LinearLayout.LayoutParams(0, -2, 1f))
         }
         statusPanel.addView(actions)
+    }
+
+    private fun confirmFullTunnel(profileId: String) {
+        if (fullTunnelDialog?.isShowing == true) return
+        val choices = column().apply { setPadding(dp(24), dp(12), dp(24), dp(8)) }
+        choices.addView(text(getString(R.string.simple_full_tunnel_warning), 15))
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.simple_full_tunnel_title)
+            .setView(ScrollView(this).apply { addView(choices) })
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        for ((label, minutes) in listOf(
+            R.string.simple_full_tunnel_15_minutes to TemporaryFullTunnelPolicy.DEFAULT_MINUTES,
+            R.string.simple_full_tunnel_until_restart to TemporaryFullTunnelPolicy.UNTIL_RESTART,
+        )) {
+            gap(choices, 10)
+            choices.addView(button(getString(label)) {
+                dialog.dismiss()
+                if (!preparing && DaemonConnectionState.read().connected &&
+                    MmkvManager.decodeSettingsString(SimpleRuntime.ACTIVE_ID) == profileId
+                ) applyFullTunnel(TemporaryFullTunnelPolicy.activationCommand(profileId, minutes))
+            }.apply {
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                background = RippleDrawable(ColorStateList.valueOf(Color.argb(20, 0, 122, 255)), bg(panel, 12), null)
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        dialog.setOnDismissListener { if (fullTunnelDialog === dialog) fullTunnelDialog = null }
+        fullTunnelDialog = dialog
+        dialog.show()
+    }
+
+    private fun applyFullTunnel(command: String) {
+        statusPanel.findViewWithTag<Switch>("status-full-tunnel")?.isEnabled = false
+        MessageUtil.sendMsg2Service(this, TemporaryFullTunnel.MESSAGE, command)
+        lifecycleScope.launch { delay(1_000); syncConnectionState(); renderStatus() }
     }
 
     private fun add() = edit(if(store.mode=="dns") BundledDnsTunnel.profile(this).copy(id=java.util.UUID.randomUUID().toString()) else SimpleConfiguration(mode = store.mode))
@@ -621,7 +658,11 @@ class SimpleActivity : AppCompatActivity() {
         syncConnectionState()
         render()
     }
-    private fun openCaptcha() { startActivity(Intent(this, VkCaptchaActivity::class.java)) }
+    private fun openCaptcha() {
+        if (!VkTurnManager.isAutoCaptchaEnabled() && DaemonConnectionState.read().captchaPending) {
+            startActivity(Intent(this, VkCaptchaActivity::class.java))
+        }
+    }
     private fun showError(message: String) { if (!isFinishing) AlertDialog.Builder(this).setTitle("Could not complete action").setMessage(message).setPositiveButton("OK", null).show() }
 
     private fun newSheet(title: String, kind: String, body: LinearLayout, save: () -> Unit): Dialog {

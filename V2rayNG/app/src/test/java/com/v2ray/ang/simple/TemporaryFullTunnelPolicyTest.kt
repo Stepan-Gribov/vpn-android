@@ -10,6 +10,16 @@ class TemporaryFullTunnelPolicyTest {
         bypassEntries=SplitTunnelImport.manual("direct.test 8.8.8.0/24"),
         tunnelEntries=SplitTunnelImport.manual("proxy.test 9.9.9.0/24"),
         pushNotifications=PushNotificationSettings(apple=true,google=true))
+
+    @Test fun `activation accepts the chosen duration only for the same profile`() {
+        val policy = TemporaryFullTunnelPolicy
+        assertEquals(15, policy.requestedMinutes(policy.activationCommand("one", 15), "one"))
+        assertEquals(0, policy.requestedMinutes(policy.activationCommand("one", 0), "one"))
+        assertNull(policy.requestedMinutes(policy.activationCommand("one", 15), "two"))
+        assertNull(policy.requestedMinutes(policy.activationCommand("one", 30), "one"))
+        assertNull(policy.requestedMinutes("on", "one"))
+    }
+
     @Test fun `TURN always supports split Amnezia follows its switch and DNS remains full`() {
         for((mode, amneziaSplit, expected) in listOf(Triple("turn",false,true),Triple("turn",true,true),
             Triple("amnezia",false,false),Triple("amnezia",true,true),Triple("dns",true,false))) {

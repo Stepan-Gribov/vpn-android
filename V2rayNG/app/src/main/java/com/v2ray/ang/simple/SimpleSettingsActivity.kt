@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.v2ray.ang.BuildConfig
+import com.v2ray.ang.R
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 
@@ -42,11 +43,9 @@ class SimpleSettingsActivity : AppCompatActivity() {
     private lateinit var cancel: TextView
     private lateinit var save: TextView
     private lateinit var progress: TextView
-    private lateinit var captcha: Switch
     private lateinit var ipv6: Switch
     private lateinit var autoConnect: Switch
     private lateinit var amneziaSplit: Switch
-    private lateinit var fullDuration: Spinner
     private lateinit var turnSessions: Spinner
     private lateinit var recovery: Switch
     private lateinit var policies: List<RadioButton>
@@ -174,12 +173,7 @@ class SimpleSettingsActivity : AppCompatActivity() {
         }
         section(parent,"Network").addView(ipv6)
         hint(parent,"IPv6 uses the same split rules. Leave disabled if the selected server does not support it.")
-        captcha = Switch(this).apply {
-            text = "Automatic VK verification"; textSize = 16f; minHeight = dp(52)
-            setOnCheckedChangeListener { _, value -> if (!model.busy) model.autoCaptcha = value }
-        }
-        section(parent, "VK verification").addView(captcha)
-        hint(parent, "Verification runs in the background. If VK needs a manual step, tap Verify VK on the main screen.")
+        hint(section(parent, "VK verification"), getString(R.string.simple_vk_verification_hint))
         val channels = section(parent, "TURN · Параллельные каналы")
         turnSessions = Spinner(this).apply {
             contentDescription = "Число каналов TURN"
@@ -218,20 +212,8 @@ class SimpleSettingsActivity : AppCompatActivity() {
         hint(parent, "TnDtun ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     }
     private fun buildSplit(parent: LinearLayout) {
-        val temporary=section(parent,"Всё в туннель · временно")
-        fullDuration=Spinner(this).apply {
-            tag="full-tunnel-duration"
-            adapter=ArrayAdapter(this@SimpleSettingsActivity,android.R.layout.simple_spinner_dropdown_item,
-                TemporaryFullTunnelPolicy.durations.map { if(it==0) "До следующего подключения" else "$it минут" })
-            onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
-                    if(!model.busy && model.loaded) model.fullTunnelMinutes=TemporaryFullTunnelPolicy.durations[position]
-                }
-                override fun onNothingSelected(parent:AdapterView<*>?) {}
-            }
-        }
-        temporary.addView(fullDuration,LinearLayout.LayoutParams(-1,dp(52)))
-        hint(parent,"Переключатель рядом с Disconnect временно отменяет адресные правила и исключения приложений. Требуется короткое переподключение. Списки сохраняются. Сплит возвращается по таймеру или при следующем подключении VPN, включая автоматическое. Во сне Android таймер применяется при ближайшем пробуждении службы.")
+        val temporary = section(parent, getString(R.string.simple_full_tunnel_title))
+        hint(temporary, getString(R.string.simple_full_tunnel_settings_hint))
         amneziaSplit=Switch(this).apply {
             text="Сплит-туннель для Amnezia"; textSize=16f; minHeight=dp(52)
             setOnCheckedChangeListener { _,value->if(!model.busy) model.amneziaSplitEnabled=value }
@@ -330,12 +312,10 @@ class SimpleSettingsActivity : AppCompatActivity() {
         recovery.isEnabled=!model.busy && model.recoveryApplies
         recovery.alpha=if(model.recoveryApplies) 1f else 0.5f
         amneziaSplit.isChecked=model.amneziaSplitEnabled
-        val durationIndex=TemporaryFullTunnelPolicy.durations.indexOf(model.fullTunnelMinutes).coerceAtLeast(0)
-        if(fullDuration.selectedItemPosition!=durationIndex) fullDuration.setSelection(durationIndex)
         val sessionIndex = com.v2ray.ang.core.TurnSessionCount.choices.indexOf(model.turnSessionCount).coerceAtLeast(0)
         if (turnSessions.selectedItemPosition != sessionIndex) turnSessions.setSelection(sessionIndex)
         autoConnect.isChecked = model.autoConnectOnRestart
-        captcha.isChecked = model.autoCaptcha; recovery.isChecked = model.autoRecovery; ipv6.isChecked=model.ipv6Enabled
+        recovery.isChecked = model.autoRecovery; ipv6.isChecked=model.ipv6Enabled
         excludedApps.text="Выбрать приложения · ${model.excludedApplications.size}"
         pushApple.isChecked=model.split.pushNotifications?.apple ?: false
         pushGoogle.isChecked=model.split.pushNotifications?.google ?: false

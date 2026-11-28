@@ -92,11 +92,15 @@ class TemporaryFullTunnelSwitchDeviceTest {
             active.set(true)
             val full = Applied(SplitTunnelSettings.DISABLED, emptyList(), emptySet())
             val split = Applied(SplitTunnelSettings.BYPASS, listOf("203.0.113.0/24"), savedApps.toSet())
+            val timed = TemporaryFullTunnelPolicy.activationCommand(profile.id, TemporaryFullTunnelPolicy.DEFAULT_MINUTES)
+            val untilRestart = TemporaryFullTunnelPolicy.activationCommand(profile.id, TemporaryFullTunnelPolicy.UNTIL_RESTART)
             for ((command, failFirst, expected) in listOf(
-                Triple("on", false, full),
+                Triple(timed, false, full),
                 Triple("off", true, full),
                 Triple("off", false, split),
-                Triple("on", true, split),
+                Triple(untilRestart, true, split),
+                Triple(untilRestart, false, full),
+                Triple("off", false, split),
             )) {
                 failNextStart.set(failFirst)
                 val previous = TemporaryFullTunnel.currentLease(profile.id)

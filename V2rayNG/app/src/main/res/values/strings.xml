@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="subscription_last_sync_description">Last successful subscription update %1$s</string>
+    <string name="simple_full_tunnel_title">Всё в туннель</string>
+    <string name="simple_full_tunnel_warning">Использование данного режима повышает риск блокировки выбранного впн сервера. Пожалуйста, используйте с осторожностью в условиях необходимости.</string>
+    <string name="simple_full_tunnel_15_minutes">15 минут</string>
+    <string name="simple_full_tunnel_until_restart">До перезапуска</string>
+    <string name="simple_full_tunnel_settings_hint">Выберите срок при включении режима на главном экране. Списки исключений сохраняются. Раздельная маршрутизация вернётся через 15 минут или при следующем подключении VPN, в зависимости от выбранного срока.</string>
+    <string name="simple_vk_verification_hint">If VK requests verification, tap Verify VK on the main screen.</string>
+    <string name="vk_turn_captcha_manual_needed">VK needs manual verification</string>
     <string name="app_name" translatable="false">TnDtun</string>
     <string name="connection_state_connecting">Connecting…</string>
     <string name="connection_state_stopping">Disconnecting…</string>

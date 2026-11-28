@@ -21,10 +21,8 @@ class SimpleSettingsModel : ViewModel() {
     private var searchJob: Job? = null
     val loaded: Boolean get() = ::store.isInitialized
     var busy = true; private set
-    var autoCaptcha = true
     var autoConnectOnRestart = false
     var amneziaSplitEnabled = TemporaryFullTunnelPolicy.DEFAULT_AMNEZIA_SPLIT_ENABLED
-    var fullTunnelMinutes = TemporaryFullTunnelPolicy.DEFAULT_MINUTES
     var autoRecovery = true
     var excludedApplications: List<String> = emptyList(); private set
     fun setExcludedApplications(value: List<String>) {
@@ -58,11 +56,9 @@ class SimpleSettingsModel : ViewModel() {
         loadingStarted = true
         operation {
             store = withContext(Dispatchers.IO) { SimpleStore(context.applicationContext) }
-            autoCaptcha = store.autoCaptcha
             autoRecovery = store.autoRecovery
             autoConnectOnRestart = store.autoConnectOnRestart
             amneziaSplitEnabled = store.amneziaSplitEnabled
-            fullTunnelMinutes = store.fullTunnelMinutes
             val active=com.v2ray.ang.handler.MmkvManager.decodeSettingsString(SimpleRuntime.ACTIVE_ID)
             recoveryApplies=(store.configurations.firstOrNull { it.id==active }?.mode ?: store.mode)=="turn"
             ipv6Enabled = store.ipv6Enabled
@@ -159,8 +155,8 @@ class SimpleSettingsModel : ViewModel() {
         val excluded=excludedApplications.toList()
         val ipv6=ipv6Enabled
         val autoConnect = autoConnectOnRestart
-        val amneziaSplit = amneziaSplitEnabled; val fullMinutes = fullTunnelMinutes
-        val captcha = autoCaptcha; val recovery = autoRecovery; val interval = turnCheckInterval; val sessions = turnSessionCount
+        val amneziaSplit = amneziaSplitEnabled
+        val recovery = autoRecovery; val interval = turnCheckInterval; val sessions = turnSessionCount
         val text = newAddress
         val draft = split
         operation {
@@ -172,7 +168,7 @@ class SimpleSettingsModel : ViewModel() {
                 val previousApps=store.excludedApplications
                 val previousIPv6=store.ipv6Enabled
                 val previousAmneziaSplit=store.amneziaSplitEnabled
-                store.saveSettings(captcha, recovery, value, interval, ipv6, excluded, autoConnect, amneziaSplit, fullMinutes, sessions)
+                store.saveSettings(store.autoCaptcha, recovery, value, interval, ipv6, excluded, autoConnect, amneziaSplit, turnSessions = sessions)
                 SimpleRuntime.applyAutomation(store)
                 previousAmneziaSplit != store.amneziaSplitEnabled || previous != store.splitTunneling || previousIPv6!=store.ipv6Enabled || previousApps!=store.excludedApplications
             }
@@ -185,10 +181,10 @@ class SimpleSettingsModel : ViewModel() {
         val excluded=excludedApplications.toList()
         val ipv6=ipv6Enabled
         val autoConnect = autoConnectOnRestart
-        val amneziaSplit = amneziaSplitEnabled; val fullMinutes = fullTunnelMinutes
-        val captcha = autoCaptcha; val recovery = autoRecovery; val interval = turnCheckInterval; val sessions = turnSessionCount; val draft = split
+        val amneziaSplit = amneziaSplitEnabled
+        val recovery = autoRecovery; val interval = turnCheckInterval; val sessions = turnSessionCount; val draft = split
         operation {
-            pendingExport = withContext(Dispatchers.IO) { store.backup(captcha, recovery, draft, interval, ipv6=ipv6, excludedApps=excluded, autoConnect=autoConnect, amneziaSplit=amneziaSplit, fullMinutes=fullMinutes, turnSessions=sessions).encoded() }
+            pendingExport = withContext(Dispatchers.IO) { store.backup(recovery=recovery, split=draft, interval=interval, ipv6=ipv6, excludedApps=excluded, autoConnect=autoConnect, amneziaSplit=amneziaSplit, turnSessions=sessions).encoded() }
             requestExport = true
         }
     }
